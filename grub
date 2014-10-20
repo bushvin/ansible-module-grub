@@ -72,7 +72,8 @@ class Grub(object):
 
     grub2_rhel_versions = [
         "RedHat7",
-        "Fedora20" ]
+        "Fedora20",
+        "Centos linux7.0.1406" ]
     grub_rhel_versions = [
         "RedHat5",
         "RedHat6" ]
@@ -108,6 +109,7 @@ class Grub(object):
     def _kernel_options_tolist(self, options):
         t = re.findall(r'([^\s]*=\$\([^\(]*\)|\$\([^\(]*\)|[^\s]*)', options)
         r = []
+        allow_multi = [ 'rd.lvm.lv' ]
         for v in t:
             if v != '':
                 if v.find('$(') >= 0 and v.find('$(') < v.find("="):
@@ -117,13 +119,14 @@ class Grub(object):
                     akey = v.partition("=")[0]
                     aval = v.partition("=")[2]
             
-            replaced = False
-            for i, el in enumerate(r):
-                if el[0] == akey:
-                    r[i] = (akey, aval)
-                    replaced = True
-            if replaced is not True:
-                r.append((akey, aval))
+                replaced = False
+                if akey not in allow_multi:
+                    for i, el in enumerate(r):
+                        if el[0] == akey and el[0]:
+                            r[i] = (akey, aval)
+                            replaced = True
+                if replaced is not True:
+                    r.append((akey, aval))
         return r
 
     def _kernel_options_tostring(self, options):
@@ -370,24 +373,28 @@ class Grub(object):
             return self._grub2_modify_kernel_options()
         elif get_distribution() + get_distribution_version() in self.grub_rhel_versions:
             return self._grub_modify_kernel_options()
+        return (1, False, get_distribution() + get_distribution_version() + " is not (yet) supported")
 
     def set_kernel_option(self):
         if get_distribution() + get_distribution_version() in self.grub2_rhel_versions:
             return self._grub2_modify_kernel_options()
         elif get_distribution() + get_distribution_version() in self.grub_rhel_versions:
             return self._grub_modify_kernel_options()
+        return (1, False, get_distribution() + get_distribution_version() + " is not (yet) supported")
 
     def set_default(self):
         if get_distribution() + get_distribution_version() in self.grub2_rhel_versions:
             return self._grub2_set_default()
         elif get_distribution() + get_distribution_version() in self.grub_rhel_versions:
             return self._grub_set_default()
+        return (1, False, get_distribution() + get_distribution_version() + " is not (yet) supported")
         
     def set_timeout(self):
         if get_distribution() + get_distribution_version() in self.grub2_rhel_versions:
             return self._grub2_set_timeout()
         elif get_distribution() + get_distribution_version() in self.grub_rhel_versions:
             return self._grub_set_timeout()
+        return (1, False, get_distribution() + get_distribution_version() + " is not (yet) supported")
         
     
         
