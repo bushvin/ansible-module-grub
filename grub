@@ -70,15 +70,6 @@ EXAMPLES = r"""
 
 class Grub(object):
 
-    grub2_rhel_versions = [
-        "RedHat7",
-        "Fedora20",
-        "Centos linux7.0.1406" ]
-    grub_rhel_versions = [
-        "RedHat5",
-        "RedHat6" ]
-
-
     def __init__(self, module):
         self.module    = module
         self.state     = module.params['state']
@@ -87,8 +78,9 @@ class Grub(object):
         self.koption    = module.params['koption']
         self.kvalue     = module.params['kvalue']
 
-        self.grub_bin         = None
-        self.grub_bin_version = None
+        self.grub_bin_install  = None
+        self.grub_bin_mkconfig = None
+        self.grub_bin_version  = -1
 
         self._get_grub_version()
 
@@ -100,11 +92,15 @@ class Grub(object):
             for binname in [ 'grub-install', 'grub2-install' ]:
                 binpath = os.path.join(path, binname)
                 if os.path.isfile(binpath) and os.access(binpath, os.X_OK):
-                    self.grub_bin = binpath
-        if self.grub_bin is not None:
-            proc = subprocess.Popen([self.grub_bin,"--version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    self.grub_bin_install = binpath
+            for binname in [ 'grub-mkconfig', 'grub2-mkconfig' ]:
+                binpath = os.path.join(path, binname)
+                if os.path.isfile(binpath) and os.access(binpath, os.X_OK):
+                    self.grub_bin_mkconfig = binpath
+        if self.grub_bin_install is not None:
+            proc = subprocess.Popen([self.grub_bin_install,"--version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             out, err = proc.communicate()
-            self.grub_bin_version = re.search('[0-9]+\.[0-9]+',out).group(0)
+            self.grub_bin_version = float(re.search('[0-9]+\.[0-9]+',out).group(0))
 
     def _kernel_options_tolist(self, options):
         t = re.findall(r'([^\s]*=\$\([^\(]*\)|\$\([^\(]*\)|[^\s]*)', options)
@@ -262,7 +258,7 @@ class Grub(object):
         return ( 0, changed, "")
 
     def _grub2_refresh_menu(self):
-        p = subprocess.Popen(["grub2-mkconfig", "-o", "/boot/grub2/grub.cfg"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        p = subprocess.Popen([self.grub_bin_mkconfig, "-o", "/boot/grub2/grub.cfg"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         out, err = p.communicate()
         if err != 0:
             return True
@@ -369,30 +365,30 @@ class Grub(object):
         return ( 0, changed, "")
         
     def remove_kernel_option(self):
-        if get_distribution() + get_distribution_version() in self.grub2_rhel_versions:
+        if self.grub_bin_version >= 1:
             return self._grub2_modify_kernel_options()
-        elif get_distribution() + get_distribution_version() in self.grub_rhel_versions:
+        elif self.grub_bin_version > 0.9 and self.grub_bin_version < 1:
             return self._grub_modify_kernel_options()
         return (1, False, get_distribution() + get_distribution_version() + " is not (yet) supported")
 
     def set_kernel_option(self):
-        if get_distribution() + get_distribution_version() in self.grub2_rhel_versions:
+        if self.grub_bin_version >= 1:
             return self._grub2_modify_kernel_options()
-        elif get_distribution() + get_distribution_version() in self.grub_rhel_versions:
+        elif self.grub_bin_version > 0.9 and self.grub_bin_version < 1:
             return self._grub_modify_kernel_options()
         return (1, False, get_distribution() + get_distribution_version() + " is not (yet) supported")
 
     def set_default(self):
-        if get_distribution() + get_distribution_version() in self.grub2_rhel_versions:
+        if self.grub_bin_version >= 1:
             return self._grub2_set_default()
-        elif get_distribution() + get_distribution_version() in self.grub_rhel_versions:
+        elif self.grub_bin_version > 0.9 and self.grub_bin_version < 1:
             return self._grub_set_default()
         return (1, False, get_distribution() + get_distribution_version() + " is not (yet) supported")
         
     def set_timeout(self):
-        if get_distribution() + get_distribution_version() in self.grub2_rhel_versions:
+        if self.grub_bin_version >= 1:
             return self._grub2_set_timeout()
-        elif get_distribution() + get_distribution_version() in self.grub_rhel_versions:
+        elif self.grub_bin_version > 0.9 and self.grub_bin_version < 1:
             return self._grub_set_timeout()
         return (1, False, get_distribution() + get_distribution_version() + " is not (yet) supported")
         
