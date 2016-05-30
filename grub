@@ -128,7 +128,7 @@ class Grub(object):
     def _kernel_options_tostring(self, options):
         t = []
         for key, val in options:
-            if val == '':
+            if val == '' or val == None:
                 t.append(key)
             else:
                 t.append('%s=%s' % (key, val))
