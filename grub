@@ -116,7 +116,7 @@ class Grub(object):
                     aval = v.partition("=")[2]
             
                 replaced = False
-                if akey not in allow_multi or akey[:1] != '$':
+                if akey not in allow_multi and akey[:1] != '$':
                     for i, el in enumerate(r):
                         if el[0] == akey and el[0]:
                             r[i] = (akey, aval)
