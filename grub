@@ -217,11 +217,13 @@ class Grub(object):
                 line = re.sub(r'(\s*GRUB_CMDLINE_LINUX=).*$', r'\1"%s"' % t, line)
             newfile = newfile + line + "\n"
         if newfile != oldfile:
+            changed = True
+            if self.module.check_mode:
+                return ( 0, True, "modifying option" )
             if self._grub2_backup_config() is not True:
                 return ( 1, False, "/etc/default/grub could not be backed up.")
             if self._grub2_save_config(newfile) is not True:
                 return ( 1, False, "/etc/default/grub could not be saved" )
-            changed=True
             if self._grub2_refresh_menu() is not True:
                 return ( 1, changed, "/boot/grub2/grub.cfg could not be refreshed")
 
@@ -250,6 +252,8 @@ class Grub(object):
                 newfile = newfile +line
         if newfile != oldfile:
             changed = True
+            if self.module.check_mode:
+                return ( 0, True, "modifying option" )
             if self._grub_backup_config() is not True:
                 return ( 1, False, "/boot/grub/grub.conf could not be backed up.")
             if self._grub_save_config(contents) is not True:
@@ -280,6 +284,8 @@ class Grub(object):
                 line = re.sub(r'(\s*GRUB_DEFAULT=).*$', r'\1"%s"' % self.default, line)
             newfile = newfile + line + "\n"
         if newfile != oldfile:
+            if self.module.check_mode:
+                return ( 0, True, "changing default entry" )
             if self._grub2_backup_config() is not True:
                 return ( 1, False, "/etc/default/grub could not be backed up.")
             if self._grub2_save_config(newfile) is not True:
@@ -305,6 +311,8 @@ class Grub(object):
                 line = re.sub(r'(\s*GRUB_TIMEOUT=).*$', r'\1"%s"' % self.timeout, line)
             newfile = newfile + line + "\n"
         if newfile != oldfile:
+            if self.module.check_mode:
+                return ( 0, True, "changing timeout" )
             if self._grub2_backup_config() is not True:
                 return ( 1, False, "/etc/default/grub could not be backed up.")
             if self._grub2_save_config(newfile) is not True:
@@ -331,6 +339,8 @@ class Grub(object):
                     line = re.sub(r'(\s*default=).*$', r'\1%s' % self.default, line)
                 newfile = newfile +line
         if newfile != oldfile:
+            if self.module.check_mode:
+                return ( 0, True, "changing default entry" )
             if self._grub_backup_config() is not True:
                 return ( 1, False, "/boot/grub/grub.conf could not be backed up.")
             if self._grub_save_config(contents) is not True:
@@ -356,6 +366,8 @@ class Grub(object):
                     line = re.sub(r'(\s*timeout=).*$', r'\1%s' % self.timeout, line)
                 newfile = newfile +line
         if newfile != oldfile:
+            if self.module.check_mode:
+                return ( 0, True, "changing timeout" )
             if self._grub_backup_config() is not True:
                 return ( 1, False, "/boot/grub/grub.conf could not be backed up.")
             if self._grub_save_config(contents) is not True:
@@ -404,7 +416,7 @@ def main():
             koption    = dict(default = None, type = 'str'),
             kvalue     = dict(default = None, type = 'str'),
         ),
-        supports_check_mode = False
+        supports_check_mode = True
     )
 
     grub = Grub(module)
