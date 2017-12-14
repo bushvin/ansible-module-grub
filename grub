@@ -50,7 +50,14 @@ options:
     description:
       - Add a value to the specified kernel option. If there's no value associated to 
         the option, then ommit this argument.
-    
+  
+  grub:
+    required: false
+    description:
+      - set the path to the grub config
+      - /boot/grub/grub.conf in case of grub
+      - /etc/default/grub in case of grub2
+
 """
 
 EXAMPLES = r"""
@@ -71,18 +78,24 @@ EXAMPLES = r"""
 class Grub(object):
 
     def __init__(self, module):
-        self.module    = module
-        self.state     = module.params['state']
-        self.default   = module.params['default']
-        self.timeout   = module.params['timeout']
-        self.koption    = module.params['koption']
-        self.kvalue     = module.params['kvalue']
+        self.module       = module
+        self.state        = module.params['state']
+        self.default      = module.params['default']
+        self.timeout      = module.params['timeout']
+        self.koption      = module.params['koption']
+        self.kvalue       = module.params['kvalue']
+        self.config_file  = module.params['grub']
 
         self.grub_bin_install  = None
         self.grub_bin_mkconfig = None
         self.grub_bin_version  = -1
 
         self._get_grub_version()
+
+        if self.config_file is None and self.grub_bin_version >= 1:
+            self.config_file = "/boot/grub/grub.conf"
+        elif self.config_file is None and self.grub_bin_version > 0.9 and self.grub_bin_version < 1:
+            self.config_file = "/etc/default/grub"
 
         self.syslogging = False
 
@@ -155,33 +168,33 @@ class Grub(object):
 
     def _grub_backup_config(self):
         try:
-            shutil.copy("/boot/grub/grub.conf", "/boot/grub/grub.conf.%s" % datetime.datetime.now().strftime("%y%m%d%H%M"))
+            shutil.copy(self.config_file, "%s.%s" % ( self.config_file, datetime.datetime.now().strftime("%y%m%d%H%M")))
             return True
         except:
             return False
 
     def _grub2_backup_config(self):
         try:
-            shutil.copy("/etc/default/grub", "/etc/default/grub.%s" % datetime.datetime.now().strftime("%y%m%d%H%M"))
+            shutil.copy(self.config_file, "%s.%s" % ( self.config_file, datetime.datetime.now().strftime("%y%m%d%H%M")))
             return True
         except:
             return False
 
     def _grub_config_exists(self):
-        if os.path.isdir("/boot/grub") and os.path.isfile("/boot/grub/grub.conf"):
+        if os.path.isdir(os.path.dirname(self.config_file)) and os.path.isfile(self.config_file):
             return True
         else:
             return False
 
     def _grub2_config_exists(self):
-        if os.path.isdir("/etc/default") and os.path.isfile("/etc/default/grub"):
+        if os.path.isdir(os.path.dirname(self.config_file)) and os.path.isfile(self.config_file):
             return True
         else:
             return False
 
     def _grub_save_config(self, contents):
         try: 
-            with open("/boot/grub/grub.conf", "w") as f:
+            with open(self.config_file, "w") as f:
                 f.write(contents)
             return True
         except:
@@ -189,7 +202,7 @@ class Grub(object):
     
     def _grub2_save_config(self, contents):
         try: 
-            with open("/etc/default/grub", "w") as f:
+            with open(self.config_file, "w") as f:
                 f.write(contents)
             return True
         except:
@@ -197,12 +210,12 @@ class Grub(object):
     
     def _grub2_modify_kernel_options(self):
         if self._grub2_config_exists() is not True:
-            return ( 1, False, "/etc/default/grub was not found")
+            return ( 1, False, "%s was not found" % self.config_file)
 
         changed = False
         newfile = ""
         oldfile = ""
-        with open("/etc/default/grub", "r") as f:
+        with open(self.config_file, "r") as f:
             oldfile = f.read()
         
         for line in oldfile.splitlines():
@@ -218,26 +231,26 @@ class Grub(object):
             newfile = newfile + line + "\n"
         if newfile != oldfile:
             if self._grub2_backup_config() is not True:
-                return ( 1, False, "/etc/default/grub could not be backed up.")
+                return ( 1, False, "%s could not be backed up." % self.config_file)
             if self._grub2_save_config(newfile) is not True:
-                return ( 1, False, "/etc/default/grub could not be saved" )
+                return ( 1, False, "%s could not be saved" % self.config_file)
             changed=True
             if self._grub2_refresh_menu() is not True:
-                return ( 1, changed, "/boot/grub2/grub.cfg could not be refreshed")
+                return ( 1, changed, "%s could not be refreshed" % self.config_file)
 
         return ( 0, changed, "")
         
     def _grub_modify_kernel_options(self):
         if self._grub_config_exists() is not True:
-            return ( 1, False, "/boot/grub/grub.conf was not found")
+            return ( 1, False, "%s was not found" % self.config_file)
 
         changed = False
         newfile = ""
         oldfile = ""
-        with open("/boot/grub/grub.conf", "r") as f:
+        with open(self.config_file, "r") as f:
             oldfile = f.read()
         
-        with open("/boot/grub/grub.conf", "r") as f:
+        with open(self.config_file, "r") as f:
             for line in f:
                 if re.compile(r'^\s*kernel ').search(line) is not None:
                     t = line.split()
@@ -251,14 +264,14 @@ class Grub(object):
         if newfile != oldfile:
             changed = True
             if self._grub_backup_config() is not True:
-                return ( 1, False, "/boot/grub/grub.conf could not be backed up.")
+                return ( 1, False, "%s could not be backed up." % self.config_file)
             if self._grub_save_config(contents) is not True:
-                return ( 1, False, "/boot/grub/grub.conf could not be saved" )
+                return ( 1, False, "%s could not be saved" % self.config_file)
 
         return ( 0, changed, "")
 
     def _grub2_refresh_menu(self):
-        p = subprocess.Popen([self.grub_bin_mkconfig, "-o", "/boot/grub2/grub.cfg"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        p = subprocess.Popen([self.grub_bin_mkconfig, "-o", self.config_file], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         out, err = p.communicate()
         if err != 0:
             return True
@@ -267,12 +280,12 @@ class Grub(object):
 
     def _grub2_set_default(self):
         if self._grub2_config_exists() is not True:
-            return ( 1, False, "/etc/default/grub was not found")
+            return ( 1, False, "%s was not found" % self.config_file)
         
         changed = False
         newfile = ""
         oldfile = ""
-        with open("/etc/default/grub", "r") as f:
+        with open(self.config_file, "r") as f:
             oldfile = f.read()
 
         for line in oldfile.splitlines():
@@ -281,23 +294,23 @@ class Grub(object):
             newfile = newfile + line + "\n"
         if newfile != oldfile:
             if self._grub2_backup_config() is not True:
-                return ( 1, False, "/etc/default/grub could not be backed up.")
+                return ( 1, False, "%s could not be backed up." % self.config_file)
             if self._grub2_save_config(newfile) is not True:
-                return ( 1, False, "/etc/default/grub could not be saved" )
+                return ( 1, False, "%s could not be saved" % self.config_file)
             changed = True
             if self._grub2_refresh_menu() is not True:
-                return ( 1, changed, "/boot/grub2/grub.cfg could not be refreshed")
+                return ( 1, changed, "%s could not be refreshed" % self.config_file)
 
         return ( 0, changed, "")
 
     def _grub2_set_timeout(self):
         if self._grub2_config_exists() is not True:
-            return ( 1, False, "/etc/default/grub was not found")
+            return ( 1, False, "%s was not found" % self.config_file)
         
         changed = False
         newfile = ""
         oldfile = ""
-        with open("/etc/default/grub", "r") as f:
+        with open(self.config_file, "r") as f:
             oldfile = f.read()
 
         for line in oldfile.splitlines():
@@ -306,35 +319,35 @@ class Grub(object):
             newfile = newfile + line + "\n"
         if newfile != oldfile:
             if self._grub2_backup_config() is not True:
-                return ( 1, False, "/etc/default/grub could not be backed up.")
+                return ( 1, False, "%s could not be backed up." % self.config_file)
             if self._grub2_save_config(newfile) is not True:
-                return ( 1, False, "/etc/default/grub could not be saved" )
+                return ( 1, False, "%s could not be saved" % self.config_file)
             changed = True
             if self._grub2_refresh_menu() is True:
-                return ( 1, changed, "/boot/grub2/grub.cfg could not be refreshed")
+                return ( 1, changed, "%s could not be refreshed" % self.config_file)
 
             return ( 0, changed, "")
 
     def _grub_set_default(self):
         if self._grub_config_exists() is not True:
-            return ( 1, changed, "/boot/grub/grub.conf was not found")
+            return ( 1, changed, "%s was not found" % self.config_file)
 
         changed = False
         newfile = ""
         oldfile = ""
-        with open("/boot/grub/grub.conf", "r") as f:
+        with open(self.config_file, "r") as f:
             oldfile = f.read()
         
-        with open("/boot/grub/grub.conf", "r") as f:
+        with open(self.config_file, "r") as f:
             for line in f:
                 if re.compile(r'^\s*default=').search(line) is not None:
                     line = re.sub(r'(\s*default=).*$', r'\1%s' % self.default, line)
                 newfile = newfile +line
         if newfile != oldfile:
             if self._grub_backup_config() is not True:
-                return ( 1, False, "/boot/grub/grub.conf could not be backed up.")
+                return ( 1, False, "%s could not be backed up." % self.config_file)
             if self._grub_save_config(contents) is not True:
-                return ( 1, False, "/boot/grub/grub.conf could not be saved" )
+                return ( 1, False, "%s could not be saved" % self.config_file)
             changed = True
 
         return ( 0, changed, "")
@@ -342,24 +355,24 @@ class Grub(object):
         
     def _grub_set_timeout(self):
         if self._grub_config_exists() is not True:
-            return ( 1, False, "/boot/grub/grub.conf was not found")
+            return ( 1, False, "%s was not found" % self.config_file)
 
         changed = False
         newfile = ""
         oldfile = ""
-        with open("/boot/grub/grub.conf", "r") as f:
+        with open(self.config_file, "r") as f:
             oldfile = f.read()
         
-        with open("/boot/grub/grub.conf", "r") as f:
+        with open(self.config_file, "r") as f:
             for line in f:
                 if re.compile(r'^\s*timeout=').search(line) is not None:
                     line = re.sub(r'(\s*timeout=).*$', r'\1%s' % self.timeout, line)
                 newfile = newfile +line
         if newfile != oldfile:
             if self._grub_backup_config() is not True:
-                return ( 1, False, "/boot/grub/grub.conf could not be backed up.")
+                return ( 1, False, "%s could not be backed up." % self.config_file)
             if self._grub_save_config(newfile) is not True:
-                return ( 1, False, "/boot/grub/grub.conf could not be saved" )
+                return ( 1, False, "%s could not be saved" % self.config_file)
             changed = True
 
         return ( 0, changed, "")
