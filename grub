@@ -93,18 +93,29 @@ class Grub(object):
         self.config_file  = module.params['grub']
         self.allow_multi  = module.params['allow_multi']
 
+        self.exists = True
+        self.config_old = ""
+        self.config_new = ""
         self.grub_bin_install  = None
         self.grub_bin_mkconfig = None
         self.grub_bin_version  = -1
 
         self._get_grub_version()
 
+        self.grub_bin_version = 0.99
+
         if self.config_file is None and self.grub_bin_version >= 1:
             self.config_file = "/etc/default/grub"
         elif self.config_file is None and self.grub_bin_version > 0.9 and self.grub_bin_version < 1:
             self.config_file = "/boot/grub/grub.conf"
 
-        self.syslogging = False
+        if os.path.isdir(os.path.dirname(self.config_file)) and os.path.isfile(self.config_file):
+            with open(self.config_file, "r") as f:
+                self.config_old = f.read()
+        else:
+            self.exists = False
+
+        self.config_new = self.config_old
 
     def _get_grub_version(self):
         for path in os.environ['PATH'].split(os.pathsep):
@@ -154,7 +165,6 @@ class Grub(object):
         t = ' '.join(t)
         return t
 
-
     def _kernel_remove_option(self, options):
         t = self._kernel_options_tolist(options)
         t = [ (key, val) for key, val in t if key != self.koption or ( key == self.koption and val != self.kvalue ) ]
@@ -180,60 +190,9 @@ class Grub(object):
             t.append((self.koption, self.kvalue))
         return self._kernel_options_tostring(t)
 
-
-    def _grub_backup_config(self):
-        try:
-            shutil.copy(self.config_file, "%s.%s" % ( self.config_file, datetime.datetime.now().strftime("%y%m%d%H%M")))
-            return True
-        except:
-            return False
-
-    def _grub2_backup_config(self):
-        try:
-            shutil.copy(self.config_file, "%s.%s" % ( self.config_file, datetime.datetime.now().strftime("%y%m%d%H%M")))
-            return True
-        except:
-            return False
-
-    def _grub_config_exists(self):
-        if os.path.isdir(os.path.dirname(self.config_file)) and os.path.isfile(self.config_file):
-            return True
-        else:
-            return False
-
-    def _grub2_config_exists(self):
-        if os.path.isdir(os.path.dirname(self.config_file)) and os.path.isfile(self.config_file):
-            return True
-        else:
-            return False
-
-    def _grub_save_config(self, contents):
-        try: 
-            with open(self.config_file, "w") as f:
-                f.write(contents)
-            return True
-        except:
-            return False
-    
-    def _grub2_save_config(self, contents):
-        try: 
-            with open(self.config_file, "w") as f:
-                f.write(contents)
-            return True
-        except:
-            return False
-    
     def _grub2_modify_kernel_options(self):
-        if self._grub2_config_exists() is not True:
-            return ( 1, False, "%s was not found" % self.config_file)
-
-        changed = False
         newfile = ""
-        oldfile = ""
-        with open(self.config_file, "r") as f:
-            oldfile = f.read()
-        
-        for line in oldfile.splitlines():
+        for line in self.config_new.splitlines():
             if re.compile(r'^\s*GRUB_CMDLINE_LINUX=').search(line) is not None:
                 t = line.partition("=")[2].strip()
                 if t[:1] == '"' and t[-1:] == '"':
@@ -244,197 +203,106 @@ class Grub(object):
                     t = self._kernel_remove_option(t)
                 line = re.sub(r'(\s*GRUB_CMDLINE_LINUX=).*$', r'\1"%s"' % t, line)
             newfile = newfile + line + "\n"
-        if newfile != oldfile:
-            changed = True
-            if self.module.check_mode:
-                return ( 0, True, "modifying option" )
-            if self._grub2_backup_config() is not True:
-                return ( 1, False, "%s could not be backed up." % self.config_file)
-            if self._grub2_save_config(newfile) is not True:
-                return ( 1, False, "%s could not be saved" % self.config_file)
-            changed=True
-            if self._grub2_refresh_menu() is not True:
-                return ( 1, changed, "%s could not be refreshed" % self.config_file)
-
-        return ( 0, changed, "")
+        self.config_new = newfile
         
     def _grub_modify_kernel_options(self):
-        if self._grub_config_exists() is not True:
-            return ( 1, False, "%s was not found" % self.config_file)
-
-        changed = False
         newfile = ""
-        oldfile = ""
-        with open(self.config_file, "r") as f:
-            oldfile = f.read()
         
-        with open(self.config_file, "r") as f:
-            for line in f:
-                if re.compile(r'^\s*kernel ').search(line) is not None:
-                    t = line.split()
-                    k = t[1]
-                    if self.state == "present":
-                        o = self._kernel_set_option(" ".join(t[2:]))
-                    else:
-                        o = self._kernel_remove_option(" ".join(t[2:]))
-                    line = re.sub(r'(\s*kernel ).*$', r'\1 %s %s' % ( k, o ), line)
-                newfile = newfile +line
-        if newfile != oldfile:
-            changed = True
-            if self.module.check_mode:
-                return ( 0, True, "modifying option" )
-            if self._grub_backup_config() is not True:
-                return ( 1, False, "%s could not be backed up." % self.config_file)
-            if self._grub_save_config(contents) is not True:
-                return ( 1, False, "%s could not be saved" % self.config_file)
-
-        return ( 0, changed, "")
+        for line in self.config_new:
+            if re.compile(r'^\s*kernel ').search(line) is not None:
+                t = line.split()
+                k = t[1]
+                if self.state == "present":
+                    o = self._kernel_set_option(" ".join(t[2:]))
+                else:
+                    o = self._kernel_remove_option(" ".join(t[2:]))
+                line = re.sub(r'(\s*kernel ).*$', r'\1 %s %s' % ( k, o ), line)
+            newfile = newfile + line + "\n"
+        self.config_new = newfile
 
     def _grub2_refresh_menu(self):
-        p = subprocess.Popen([self.grub_bin_mkconfig, "-o", self.config_file], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        p = subprocess.Popen([self.grub_bin_mkconfig, "-o", "/boot/grub2/grub.cfg"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         out, err = p.communicate()
         if err != 0:
-            return True
+            return ( True, "" )
         else:
-            return False
+            return ( False, "Couln't make new config" )
 
     def _grub2_set_default(self):
-        if self._grub2_config_exists() is not True:
-            return ( 1, False, "%s was not found" % self.config_file)
-        
-        changed = False
         newfile = ""
-        oldfile = ""
-        with open(self.config_file, "r") as f:
-            oldfile = f.read()
-
-        for line in oldfile.splitlines():
+        for line in self.config_new.splitlines():
             if re.compile(r'^\s*GRUB_DEFAULT=').search(line) is not None:
                 line = re.sub(r'(\s*GRUB_DEFAULT=).*$', r'\1"%s"' % self.default, line)
             newfile = newfile + line + "\n"
-        if newfile != oldfile:
-            if self.module.check_mode:
-                return ( 0, True, "changing default entry" )
-            if self._grub2_backup_config() is not True:
-                return ( 1, False, "%s could not be backed up." % self.config_file)
-            if self._grub2_save_config(newfile) is not True:
-                return ( 1, False, "%s could not be saved" % self.config_file)
-            changed = True
-            if self._grub2_refresh_menu() is not True:
-                return ( 1, changed, "%s could not be refreshed" % self.config_file)
-
-        return ( 0, changed, "")
+        self.config_new = newfile
 
     def _grub2_set_timeout(self):
-        if self._grub2_config_exists() is not True:
-            return ( 1, False, "%s was not found" % self.config_file)
-        
-        changed = False
         newfile = ""
-        oldfile = ""
-        with open(self.config_file, "r") as f:
-            oldfile = f.read()
-
-        for line in oldfile.splitlines():
+        for line in self.config_new.splitlines():
             if re.compile(r'^\s*GRUB_TIMEOUT=').search(line) is not None:
                 line = re.sub(r'(\s*GRUB_TIMEOUT)=.*$', r'\1="%s"' % self.timeout, line)
             newfile = newfile + line + "\n"
-
-        if newfile != oldfile:
-            if self.module.check_mode:
-                return ( 0, True, "changing timeout" )
-            if self._grub2_backup_config() is not True:
-                return ( 1, False, "%s could not be backed up." % self.config_file)
-            if self._grub2_save_config(newfile) is not True:
-                return ( 1, False, "%s could not be saved" % self.config_file)
-            changed = True
-            if self._grub2_refresh_menu() is True:
-                return ( 1, changed, "%s could not be refreshed" % self.config_file)
-
-        return ( 0, changed, "")
+        self.config_new = newfile
 
     def _grub_set_default(self):
-        if self._grub_config_exists() is not True:
-            return ( 1, changed, "%s was not found" % self.config_file)
-
-        changed = False
         newfile = ""
-        oldfile = ""
-        with open(self.config_file, "r") as f:
-            oldfile = f.read()
-        
-        with open(self.config_file, "r") as f:
-            for line in f:
-                if re.compile(r'^\s*default=').search(line) is not None:
-                    line = re.sub(r'(\s*default=).*$', r'\1%s' % self.default, line)
-                newfile = newfile +line
-        if newfile != oldfile:
-            if self.module.check_mode:
-                return ( 0, True, "changing default entry" )
-            if self._grub_backup_config() is not True:
-                return ( 1, False, "%s could not be backed up." % self.config_file)
-            if self._grub_save_config(contents) is not True:
-                return ( 1, False, "%s could not be saved" % self.config_file)
-            changed = True
-
-        return ( 0, changed, "")
-
+        for line in self.config_new.splitlines():
+            if re.compile(r'^\s*default=').search(line) is not None:
+                line = re.sub(r'(\s*default=).*$', r'\1%s' % self.default, line)
+            newfile = newfile + line + "\n"
+        self.config_new = newfile
         
     def _grub_set_timeout(self):
-        if self._grub_config_exists() is not True:
-            return ( 1, False, "%s was not found" % self.config_file)
-
-        changed = False
         newfile = ""
-        oldfile = ""
-        with open(self.config_file, "r") as f:
-            oldfile = f.read()
-        
-        with open(self.config_file, "r") as f:
-            for line in f:
-                if re.compile(r'^\s*timeout=').search(line) is not None:
-                    line = re.sub(r'(\s*timeout)=.*$', r'\1=%s' % self.timeout, line)
-                newfile = newfile +line
-        if newfile != oldfile:
-            if self.module.check_mode:
-                return ( 0, True, "changing timeout" )
-            if self._grub_backup_config() is not True:
-                return ( 1, False, "%s could not be backed up." % self.config_file)
-            if self._grub_save_config(newfile) is not True:
-                return ( 1, False, "%s could not be saved" % self.config_file)
-            changed = True
-
-        return ( 0, changed, "")
+        for line in self.config_new.splitlines():
+            if re.compile(r'^\s*timeout=').search(line) is not None:
+                line = re.sub(r'(\s*timeout)=.*$', r'\1=%s' % self.timeout, line)
+            newfile = newfile + line + "\n"
+        self.config_new = newfile
         
     def remove_kernel_option(self):
         if self.grub_bin_version >= 1:
-            return self._grub2_modify_kernel_options()
+            self._grub2_modify_kernel_options()
         elif self.grub_bin_version > 0.9 and self.grub_bin_version < 1:
-            return self._grub_modify_kernel_options()
-        return (1, False, get_distribution() + get_distribution_version() + " is not (yet) supported")
+            self._grub_modify_kernel_options()
 
     def set_kernel_option(self):
         if self.grub_bin_version >= 1:
-            return self._grub2_modify_kernel_options()
+            self._grub2_modify_kernel_options()
         elif self.grub_bin_version > 0.9 and self.grub_bin_version < 1:
-            return self._grub_modify_kernel_options()
-        return (1, False, get_distribution() + get_distribution_version() + " is not (yet) supported")
+            self._grub_modify_kernel_options()
 
     def set_default(self):
         if self.grub_bin_version >= 1:
-            return self._grub2_set_default()
+            self._grub2_set_default()
         elif self.grub_bin_version > 0.9 and self.grub_bin_version < 1:
-            return self._grub_set_default()
-        return (1, False, get_distribution() + get_distribution_version() + " is not (yet) supported")
+            self._grub_set_default()
         
     def set_timeout(self):
         if self.grub_bin_version >= 1:
-            return self._grub2_set_timeout()
+            self._grub2_set_timeout()
         elif self.grub_bin_version > 0.9 and self.grub_bin_version < 1:
-            return self._grub_set_timeout()
-        return (1, False, get_distribution() + get_distribution_version() + " is not (yet) supported")
+            self._grub_set_timeout()
         
+    def save_config(self, contents):
+        try: 
+            with open(self.config_file, "w") as f:
+                f.write(contents)
+        except:
+            return ( False, "Couldn't save config" )
+
+        if self.grub_bin_version >= 1:
+            return self._grub2_refresh_menu()
     
+    def backup_config(self):
+        try:
+            shutil.copy(self.config_file, "%s.%s" % ( self.config_file, datetime.datetime.now().strftime("%y%m%d%H%M")))
+            return True
+        except:
+            return False
+
+    def haschanged(self):
+        return self.config_old != self.config_new
         
 
 def main():
@@ -452,46 +320,40 @@ def main():
     )
 
     grub = Grub(module)
+    if not grub.exists:
+        module.fail_json(msg="%s couldn't be found" % grub.config_file )
 
-    if grub.syslogging:
-        syslog.openlog('ansible-%s' % os.path.basename(__file__))
-        syslog.syslog(syslog.LOG_NOTICE, 'Grub instantiated - platform %s' % user.platform)
-        if grub.distribution:
-            syslog.syslog(syslog.LOG_NOTICE, 'Grub instantiated - distribution %s' % grub.distribution)
-
-
-    rc = None
     out = ''
     err  = ''
     result = {}
     result['state'] = grub.state
-    changed = False
     msg = ""
 
     if grub.state == 'absent':
         if grub.koption is not None:
-            result['koption'] = grub.koption
-            (rc, changed, msg) = grub.remove_kernel_option()
-            if rc != 0:
-                module.fail_json(koption=grub.koption, msg=msg, rc=rc)
+            grub.remove_kernel_option()
         else:
             module.fail_json(msg="No kernel option specified to modify")
 
     elif grub.state == 'present':
         if grub.default is not None:
-            (rc, changed, msg) = grub.set_default()
-            result['default'] = grub.default
-        elif grub.timeout is not None:
-            (rc, changed, msg) = grub.set_timeout()
-            result['timeout'] = grub.timeout
-        elif grub.koption is not None:
-            (rc, changed, msg) = grub.set_kernel_option()
-            result['koption'] = grub.koption
+            grub.set_default()
+        if grub.timeout is not None:
+            grub.set_timeout()
+        if grub.koption is not None:
+            grub.set_kernel_option()
 
-        if rc is not None and rc != 0:
-            module.fail_json(koption=grub.koption, msg=msg, rc=rc)
+    result['diff'] = { 'before': grub.config_old,
+                       'after': grub.config_new }
 
-    module.exit_json(changed=changed, msg=msg, **result)
+    if not module.check_mode and grub.haschanged():
+        if not grub.backup_config():
+            module.fail_json(msg="Couldn't create backup of config")
+        (result, msg) = grub.save_config()
+        if not result:
+            module.fail_json(msg=msg)
+
+    module.exit_json(changed=grub.haschanged(), msg=msg, **result)
 
 # import module snippets
 from ansible.module_utils.basic import *
