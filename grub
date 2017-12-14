@@ -91,7 +91,7 @@ class Grub(object):
         self.koption      = module.params['koption']
         self.kvalue       = module.params['kvalue']
         self.config_file  = module.params['grub']
-        self.allow_multi = module.params['allow_multi']
+        self.allow_multi  = module.params['allow_multi']
 
         self.grub_bin_install  = None
         self.grub_bin_mkconfig = None
@@ -100,9 +100,9 @@ class Grub(object):
         self._get_grub_version()
 
         if self.config_file is None and self.grub_bin_version >= 1:
-            self.config_file = "/boot/grub/grub.conf"
-        elif self.config_file is None and self.grub_bin_version > 0.9 and self.grub_bin_version < 1:
             self.config_file = "/etc/default/grub"
+        elif self.config_file is None and self.grub_bin_version > 0.9 and self.grub_bin_version < 1:
+            self.config_file = "/boot/grub/grub.conf"
 
         self.syslogging = False
 
@@ -337,8 +337,9 @@ class Grub(object):
 
         for line in oldfile.splitlines():
             if re.compile(r'^\s*GRUB_TIMEOUT=').search(line) is not None:
-                line = re.sub(r'(\s*GRUB_TIMEOUT=).*$', r'\1"%s"' % self.timeout, line)
+                line = re.sub(r'(\s*GRUB_TIMEOUT)=.*$', r'\1="%s"' % self.timeout, line)
             newfile = newfile + line + "\n"
+
         if newfile != oldfile:
             if self.module.check_mode:
                 return ( 0, True, "changing timeout" )
@@ -350,7 +351,7 @@ class Grub(object):
             if self._grub2_refresh_menu() is True:
                 return ( 1, changed, "%s could not be refreshed" % self.config_file)
 
-            return ( 0, changed, "")
+        return ( 0, changed, "")
 
     def _grub_set_default(self):
         if self._grub_config_exists() is not True:
@@ -392,7 +393,7 @@ class Grub(object):
         with open(self.config_file, "r") as f:
             for line in f:
                 if re.compile(r'^\s*timeout=').search(line) is not None:
-                    line = re.sub(r'(\s*timeout=).*$', r'\1%s' % self.timeout, line)
+                    line = re.sub(r'(\s*timeout)=.*$', r'\1=%s' % self.timeout, line)
                 newfile = newfile +line
         if newfile != oldfile:
             if self.module.check_mode:
@@ -439,12 +440,13 @@ class Grub(object):
 def main():
     module = AnsibleModule(
         argument_spec = dict(
-            state     = dict(default = 'present', choices = ['present', 'absent'], type = 'str'),
-            default   = dict(default = None, type = 'int'),
-            timeout   = dict(default = None, type = 'int'),
-            koption    = dict(default = None, type = 'str'),
-            kvalue     = dict(default = None, type = 'str'),
-            allow_multi = dict(default = False, type = 'bool'),
+            state        = dict(default = 'present', choices = ['present', 'absent'], type = 'str'),
+            default      = dict(default = None, type = 'int'),
+            timeout      = dict(default = None, type = 'int'),
+            koption      = dict(default = None, type = 'str'),
+            kvalue       = dict(default = None, type = 'str'),
+            grub         = dict(default = None, type = 'str'),
+            allow_multi  = dict(default = False, type = 'bool'),
         ),
         supports_check_mode = True
     )
