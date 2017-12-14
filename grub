@@ -358,7 +358,7 @@ class Grub(object):
         if newfile != oldfile:
             if self._grub_backup_config() is not True:
                 return ( 1, False, "/boot/grub/grub.conf could not be backed up.")
-            if self._grub_save_config(contents) is not True:
+            if self._grub_save_config(newfile) is not True:
                 return ( 1, False, "/boot/grub/grub.conf could not be saved" )
             changed = True
 
