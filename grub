@@ -58,6 +58,12 @@ options:
       - /boot/grub/grub.conf in case of grub
       - /etc/default/grub in case of grub2
 
+  allow_multi:
+    required: false
+    choices: [ yes, no ]
+    description:
+      - Whether an option can be defined multiple times
+    
 """
 
 EXAMPLES = r"""
@@ -85,6 +91,7 @@ class Grub(object):
         self.koption      = module.params['koption']
         self.kvalue       = module.params['kvalue']
         self.config_file  = module.params['grub']
+        self.allow_multi = module.params['allow_multi']
 
         self.grub_bin_install  = None
         self.grub_bin_mkconfig = None
@@ -118,7 +125,6 @@ class Grub(object):
     def _kernel_options_tolist(self, options):
         t = re.findall(r'([^\s]*=\$\([^\(]*\)|\$\([^\(]*\)|[^\s]*)', options)
         r = []
-        allow_multi = [ 'rd.lvm.lv' ]
         for v in t:
             if v != '':
                 if v.find('$(') >= 0 and v.find('$(') < v.find("="):
@@ -129,7 +135,7 @@ class Grub(object):
                     aval = v.partition("=")[2]
             
                 replaced = False
-                if akey not in allow_multi and akey[:1] != '$':
+                if akey == self.koption and self.allow_multi is not True and akey[:1] != '$':
                     for i, el in enumerate(r):
                         if el[0] == akey and el[0]:
                             r[i] = (akey, aval)
@@ -151,14 +157,23 @@ class Grub(object):
 
     def _kernel_remove_option(self, options):
         t = self._kernel_options_tolist(options)
-        t = [ (key, val) for key, val in t if key != self.koption ]
+        t = [ (key, val) for key, val in t if key != self.koption or ( key == self.koption and val != self.kvalue ) ]
         return self._kernel_options_tostring(t)
 
     def _kernel_set_option(self, options):
         t = self._kernel_options_tolist(options)
+
+        found = False
+        for i, el in enumerate(t):
+            if el[0] == self.koption and el[1] == self.kvalue:
+                found = True
+        if found is True:
+            return self._kernel_options_tostring(t)
+
         replaced = False
         for i, el in enumerate(t):
-            if el[0] == self.koption:
+            found = False
+            if el[0] == self.koption and self.allow_multi is not True:
                 t[i] = (el[0], self.kvalue)
                 replaced = True
         if replaced is not True:
@@ -230,6 +245,9 @@ class Grub(object):
                 line = re.sub(r'(\s*GRUB_CMDLINE_LINUX=).*$', r'\1"%s"' % t, line)
             newfile = newfile + line + "\n"
         if newfile != oldfile:
+            changed = True
+            if self.module.check_mode:
+                return ( 0, True, "modifying option" )
             if self._grub2_backup_config() is not True:
                 return ( 1, False, "%s could not be backed up." % self.config_file)
             if self._grub2_save_config(newfile) is not True:
@@ -263,6 +281,8 @@ class Grub(object):
                 newfile = newfile +line
         if newfile != oldfile:
             changed = True
+            if self.module.check_mode:
+                return ( 0, True, "modifying option" )
             if self._grub_backup_config() is not True:
                 return ( 1, False, "%s could not be backed up." % self.config_file)
             if self._grub_save_config(contents) is not True:
@@ -293,6 +313,8 @@ class Grub(object):
                 line = re.sub(r'(\s*GRUB_DEFAULT=).*$', r'\1"%s"' % self.default, line)
             newfile = newfile + line + "\n"
         if newfile != oldfile:
+            if self.module.check_mode:
+                return ( 0, True, "changing default entry" )
             if self._grub2_backup_config() is not True:
                 return ( 1, False, "%s could not be backed up." % self.config_file)
             if self._grub2_save_config(newfile) is not True:
@@ -318,6 +340,8 @@ class Grub(object):
                 line = re.sub(r'(\s*GRUB_TIMEOUT=).*$', r'\1"%s"' % self.timeout, line)
             newfile = newfile + line + "\n"
         if newfile != oldfile:
+            if self.module.check_mode:
+                return ( 0, True, "changing timeout" )
             if self._grub2_backup_config() is not True:
                 return ( 1, False, "%s could not be backed up." % self.config_file)
             if self._grub2_save_config(newfile) is not True:
@@ -344,6 +368,8 @@ class Grub(object):
                     line = re.sub(r'(\s*default=).*$', r'\1%s' % self.default, line)
                 newfile = newfile +line
         if newfile != oldfile:
+            if self.module.check_mode:
+                return ( 0, True, "changing default entry" )
             if self._grub_backup_config() is not True:
                 return ( 1, False, "%s could not be backed up." % self.config_file)
             if self._grub_save_config(contents) is not True:
@@ -369,6 +395,8 @@ class Grub(object):
                     line = re.sub(r'(\s*timeout=).*$', r'\1%s' % self.timeout, line)
                 newfile = newfile +line
         if newfile != oldfile:
+            if self.module.check_mode:
+                return ( 0, True, "changing timeout" )
             if self._grub_backup_config() is not True:
                 return ( 1, False, "%s could not be backed up." % self.config_file)
             if self._grub_save_config(newfile) is not True:
@@ -416,8 +444,9 @@ def main():
             timeout   = dict(default = None, type = 'int'),
             koption    = dict(default = None, type = 'str'),
             kvalue     = dict(default = None, type = 'str'),
+            allow_multi = dict(default = False, type = 'bool'),
         ),
-        supports_check_mode = False
+        supports_check_mode = True
     )
 
     grub = Grub(module)
