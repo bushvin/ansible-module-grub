@@ -349,8 +349,8 @@ def main():
     if not module.check_mode and grub.haschanged():
         if not grub.backup_config():
             module.fail_json(msg="Couldn't create backup of config")
-        (result, msg) = grub.save_config()
-        if not result:
+        (grub_mkconfig_result, msg) = grub.save_config(grub.config_new)
+        if not grub_mkconfig_result:
             module.fail_json(msg=msg)
 
     module.exit_json(changed=grub.haschanged(), msg=msg, **result)
